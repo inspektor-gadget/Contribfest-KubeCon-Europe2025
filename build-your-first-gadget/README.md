@@ -1,8 +1,21 @@
 # Implementing our first gadget
 
-In this track we want to create a gadget which traces every process opening a file - be it for writing or reading. With the framework provided by Inspektor Gadgets this can be achieved easily. Even better is the out of the box enrichment for containers and Kubernetes.
+In this track we will introduce how you can build your own gadget.
+Gadgets are a fundamental component of Inspektor Gadget and act as the mechanism for data collection.
+They are bundled in an OCI image an consist of 3 parts:
+1. The eBPF program which gathers the low level date
+2. The YAML file which includes the metadata about the gadget, so the consumer knows about its functionality
+3. An optional WASM layer for userspace processing and enrichment
 
-This lab is split into 4 tasks. In the repository you can see 4 folders, each of them having a `template` and `solution` subdirectory. You can always start a task by getting the source out of the `template` directory. If you want to compare your solution, you will find the reference implementation in `solution`.
+In this track we want to create a gadget which traces every process opening a file - be it for writing or reading.
+It is important to have visibility into these processes for a multitude of reasons such as, from a security perspective, there are files which we want to monitor closely, for example critical configuration files such as etc/passwd should be monitored for unauthorized access.
+With the framework provided by Inspektor Gadgets this can be achieved easily.
+Even better is the out of the box enrichment for containers and Kubernetes.
+
+This lab requires some knowledge of the C programming language and golang for the optional WASM part.
+It is split into 4 tasks and in the repository you can see 4 folders, each of them having a `template` and `solution` subdirectory.
+You can always start a task by getting the source out of the `template` directory.
+If you want to compare your solution, you will find the reference implementation in `solution`.
 This lab is also designed so that you can keep your own code from previous tasks and extend it too. If you choose to keep your own code, the variables might have other names of course :)
 
 Let's start our journey and create a folder dedicated to our gadget:
@@ -19,7 +32,10 @@ You can start by copying the template from `00 basic_tracer/template/program.bpf
 
 ### Compilation and running
 
-Before we change and extend this skeleton, we should learn how we can compile our gadget and run it. When you have the local binary of Inspektor Gadget called `ig` installed the compilation is only a single line in the terminal: `sudo ig image build path/to/gadget/dir -t tag.io/for/the/docker/image`. In our case we need to do
+Before we change and extend this skeleton, we should learn how we can compile our gadget and run it.
+In the provided VMs we already installed `ig`, but to follow on your own machine or later you need to follow the [Installation guide on our page](https://inspektor-gadget.io/docs/latest/reference/install-linux).
+After you have the local binary of Inspektor Gadget called `ig` installed, the compilation is only a single line in the terminal: `sudo ig image build path/to/gadget/dir -t tag.io/for/the/docker/image`.
+In our case we need to do
 ```bash
 ~/mygadget $ sudo ig image build -t open .
 Pulling builder image ghcr.io/inspektor-gadget/ebpf-builder@sha256:abde516ef837b9df6f8b70c9cd834cd4f0396d5b07e6a034906846c4935c7f24
@@ -38,7 +54,7 @@ After our gadget is successfully built and tagged as `open` we can run it the fo
 ~/mygadget $ sudo ig run open --verify-image=false --fields +timestamp
 ```
 
-To execute the gadget, we don't need to be in the same directory (and if we push our gadget to OCI registries we can also use it on other hosts). We need the `--verifuly-image=false` parameter here, since our gadget is not signed, but we know its safe and can be trusted. Our skeleton of the gadget only has a single field called `timestamp` and by default these are not shown. In our lab we want them to be seen so we specify that the `timestamp` column should be included by giving it a `+` prefix.
+To execute the gadget, we don't need to be in the same directory (and if we push our gadget to OCI registries we can also use it on other hosts). We need the `--verify-image=false` parameter here, since our gadget is not signed, but we know its safe and can be trusted. Our skeleton of the gadget only has a single field called `timestamp` and by default these are not shown. In our lab we want them to be seen so we specify that the `timestamp` column should be included by giving it a `+` prefix.
 
 To see any events we need to generate some events. To do that, leave the `sudo ig run` command running and open a second terminal or ssh session. For testing purposes, we run an interactive docker container:
 ```bash
@@ -156,7 +172,7 @@ And it shows us the container name, the command which executed the syscall and m
 
 ## 01 Filename
 
-Now that we have some basic information about the events, we can expand our gadget more. Until know we didn't do anything with the `struct syscall_trace_enter *ctx` parameter besides passing them to some Inspektor Gadget function.
+Now that we have some basic information about the events, we can expand our gadget more. Until now we didn't do anything with the `struct syscall_trace_enter *ctx` parameter besides passing them to some Inspektor Gadget function.
 
 Looking at the linux kernel source code at [elixir.bootlin.com](https://elixir.bootlin.com/linux/v6.13.7/source/kernel/trace/trace.h#L137) we see that this struct also contains the arguments `args` of the system call in an array.
 
