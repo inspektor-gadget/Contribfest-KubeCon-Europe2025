@@ -56,13 +56,7 @@ After our gadget is successfully built and tagged as `open` we can run it the fo
 
 To execute the gadget, we don't need to be in the same directory (and if we push our gadget to OCI registries we can also use it on other hosts). We need the `--verify-image=false` parameter here, since our gadget is not signed, but we know its safe and can be trusted. Our skeleton of the gadget only has a single field called `timestamp` and by default these are not shown. In our lab we want them to be seen so we specify that the `timestamp` column should be included by giving it a `+` prefix.
 
-To see any events we need to generate some events. To do that, leave the `sudo ig run` command running and open a second terminal or ssh session. For testing purposes, we run an interactive docker container:
-```bash
-~ $ docker run -it --rm busybox
-/ # 
-```
-
-Just creating the container already created many events which can be seen
+Given that the gadget is running in a system with other components accessing files, we can already see some events:
 
 ```bash
 ~ $ sudo ig run open --verify-image=false --fields +timestamp
@@ -92,10 +86,10 @@ int open_entry(struct syscall_trace_enter *ctx)
 	return enter_open(ctx);
 }
 ```
-The `SEC(tracepoint/syscalls/` part instructs the framework to attach the following program to a syscall. The remainder of `sys_enter_openat` specifies that we want the program to be called right before the `openat` syscalls get `enter`ed /executed. If we want to trace the exit out of `openat` we would need to specify `sys_exit_openat`.
+The `SEC(tracepoint/syscalls/` part instructs the framework to attach the following program to a syscall. The remainder of `sys_enter_openat` specifies that we want the program to be called right before the `openat` syscalls get entered (i.e. executed). If we want to trace the exit out of `openat` we would need to specify `sys_exit_openat`.
 The function name itself needs to be unique inside our program. The parameter `struct syscall_trace_enter *` is required and we will need it to extract some specific information. We will get back later to the insides of that struct.
 
-In the method body you see that we are just calling another function `enter_openat`. That function actually contains all the logic we want to write. We split that into its own separate function since there are actually **2** different syscalls to open a file. One is `openat` and the second one `open`. We don't know which of these syscalls the programs are calling so we should trace both.
+In the method body you see that we are just calling another function `handle_open`. That function actually contains all the logic we want to write. We separate that logic that into its own function since there are actually **2** different syscalls to open a file. One is `openat` and the second one `open`. We don't know which of these syscalls the programs are calling so we should trace both.
 
 Your first task is to create a new function in the same file for `open` with the correct `SEC(` and call `handle_open` in the function body.
 <details>
@@ -118,7 +112,7 @@ When running our gadget we still only see some timestamps. All the logic for the
 	if (gadget_should_discard_data_current())
 		return 0;
 ```
-If you remember we needed to create a container to generate some events in our gadget. But an eBPF program attached to a syscall can see every syscall invocation on the host. Most of the time you don't want that, especially in the Kubernetes scenario. The function `gadget_should_discard_data_current` helps us to achieve that and provides premade filtering logic. For example, we can already run our gadget and trace only events for a container named `nginx-40` by running `sudo ig run open --verify-image=false  --fields +timestamp -c your_container_name`
+An eBPF program attached to a syscall can see every syscall invocation on the host. Most of the time you don't want that, especially in the Kubernetes scenario. The function `gadget_should_discard_data_current` helps us to achieve that and provides premade filtering logic. For example, we can already run our gadget and trace only events for a container named `nginx-40` by running `sudo ig run open --verify-image=false  --fields +timestamp -c nginx-40`
 
 ```C
 	event = gadget_reserve_buf(&events, sizeof(*event));
@@ -130,12 +124,13 @@ If you remember we needed to create a container to generate some events in our g
     gadget_submit_buf(ctx, &events, event, sizeof(*event));
 ```
 
-Here the first lines reserves a spot for our new event in the `events` map. After setting the `timestamp_raw` member to the current timestamp we are submitting the event. At this point Inspektor Gadget can read this event from userspace and do all its magic.
+Here the first lines reserves a spot for our new event in the `events` map. After setting the `timestamp_raw` member to the current timestamp we then submit the event. At this point Inspektor Gadget can read this event from userspace and do all its magic.
 
-Now we have all the informations and can add more information to our gadget. The most important part would be getting all the container or kubernetes information where the event originated from. Therefore, if a file was opened in a container named `MyContainer` we want to see that.
-Fortunatly Inspektor Gadget helps us out again and does the heavy lifting. The framework provides us with a special structure named `gadget_process` that we need to include in our `struct event` as a member. Populating that new member can also be done by calling `gadget_process_populate(...)`. The documentation for `gadget_process_populate` can be found [on our website](https://inspektor-gadget.io/docs/latest/gadget-devel/gadget-ebpf-api#helpers)
+Now we have all the informations and can add more data to our gadget. The most important part would be getting all the container or kubernetes information where the event originated from. Therefore, if a file was opened in a container named `MyContainer` we want to see that.
 
-Your next task is to add these parts in our gadget, so it can show container information alongside its events
+Fortunatly Inspektor Gadget helps us out again and does the heavy lifting. The framework provides us with a special structure named `gadget_process` that we can include in our `struct event` as a member. Populating that new member can also be done by calling `gadget_process_populate(...)`. The documentation for `gadget_process_populate` can be found [on our website](https://inspektor-gadget.io/docs/latest/gadget-devel/gadget-ebpf-api#helpers)
+
+Your next task is to add the `gadget_process` struct to our gadget and populate it, so it can show container information alongside its events
 
 <details>
 <summary>Solution</summary>
@@ -182,7 +177,7 @@ To decipher the function definition: The first macro parameter is the syscall na
 ```C
 SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
 ```
-and therefore the filename should be found in `args[0]` inside the `struct syscall_trace_enter`. We also need to cast the parameter to `const char *`.
+and therefore the filename should be found in `args[0]` inside the `struct syscall_trace_enter`. For `openat` the filename should be found in `args[1]`. We also need to cast those parameters to `const char *`.
 
 For us to see the filename in our events we of course need a new member in our `struct event`. We can't use pointers here, since we are crossing kernel and user space boundaries. So we need to use a `char[256]` array. The size limit is arbitrary and should be able to store the longest filenames.
 
@@ -251,7 +246,7 @@ Now we have the final piece to copy the filename from the `args` into our new `s
 ```
 </details>
 
-Now when running a simple `echo foo > bar` command in our test container we can see the following output when we have our gadget running:
+Now when running a simple `echo foo > bar` command in a test container we can see the following output when we have our gadget running:
 ```bash
 ~/mygadget $ sudo ./ig run open --verify-image=false
 RUNTIME.CONTAINERNAME                             COMM                    PID        TID FILENAME                 
@@ -337,7 +332,7 @@ or we can retag our existing built gadget
 ~/mygadget $ sudo ig image tag open ttl.sh/a_unique_tag
 ```
 
-and then we can finally push it to the registry:
+and then we can finally push it to the registry. Example with a unique tag `9272b90f-a23e-4457-bc84-e3f6106cba31`:
 ```bash
 ~/mygadget $ sudo ig image tag open ttl.sh/9272b90f-a23e-4457-bc84-e3f6106cba31
 Successfully tagged with ttl.sh/9272b90f-a23e-4457-bc84-e3f6106cba31:latest@sha256:d88da3ac5e383127853c23f0caf93312d8a277bae22bd3122d4dde5212103a75
@@ -404,7 +399,7 @@ vibrant_darwin                 sh          3524211    3524211 bar             57
 If your output gets truncated, you can either resize our terminal or use the `json`/`jsonpretty` output mode with `-o json`/`-o jsonpretty` which should show you all the fields currently available. Many of them we didn't see in this lab and ignored it:
 
 ```json
-~/mygadget $ sudo ./ig run open --verify-image=false -o jsonpretty
+~/mygadget $ sudo ig run open --verify-image=false -o jsonpretty
 {
   "filename": "bar",
   "flags": 577,
