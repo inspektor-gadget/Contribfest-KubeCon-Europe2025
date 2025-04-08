@@ -89,7 +89,7 @@ int open_entry(struct syscall_trace_enter *ctx)
 The `SEC(tracepoint/syscalls/` part instructs the framework to attach the following program to a syscall. The remainder of `sys_enter_openat` specifies that we want the program to be called right before the `openat` syscalls get entered (i.e. executed). If we want to trace the exit out of `openat` we would need to specify `sys_exit_openat`.
 The function name itself needs to be unique inside our program. The parameter `struct syscall_trace_enter *` is required and we will need it to extract some specific information. We will get back later to the insides of that struct.
 
-In the method body you see that we are just calling another function `handle_open`. That function actually contains all the logic we want to write. We separate that logic that into its own function since there are actually **2** different syscalls to open a file. One is `openat` and the second one `open`. We don't know which of these syscalls the programs are calling so we should trace both.
+In the method body you see that we are just calling another function `handle_open`. That function actually contains all the logic we want to write. We separate that logic into its own function since there are actually **2** different syscalls to open a file. One is `openat` and the second one `open`. We don't know which of these syscalls the programs are calling so we should trace both.
 
 Your first task is to create a new function in the same file for `open` with the correct `SEC(` and call `handle_open` in the function body.
 <details>
