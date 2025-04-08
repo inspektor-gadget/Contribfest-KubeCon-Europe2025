@@ -37,8 +37,8 @@ static __always_inline int handle_open(struct syscall_trace_enter *ctx)
 
     // This is an Inspektor Gadget helper which checks if we should discard the
     // current data based on premade filters that we can set in Inspektor Gadget itself
-    // So if we set the Inspektor Gadget so that our gadget should only trace a container
-    // named "nginx-40", this function will return 0 for all other containers
+    // So if we want that our gadget should only trace a container named "nginx-40",
+    // this function will return 0 for the "nginx-40" container and 1 for all other containers
 	if (gadget_should_discard_data_current())
 		return 0;
     
