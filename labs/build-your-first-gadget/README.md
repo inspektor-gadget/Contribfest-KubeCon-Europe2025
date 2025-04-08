@@ -177,7 +177,7 @@ To decipher the function definition: The first macro parameter is the syscall na
 ```C
 SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
 ```
-and therefore the filename should be found in `args[0]` inside the `struct syscall_trace_enter`. For `openat` the filename should be found in `args[1]`. We also need to cast those parameters to `const char *`.
+and therefore the filename should be found in `args[0]` inside the `struct syscall_trace_enter`. We also need to cast those parameters to `const char *`.
 
 For us to see the filename in our events we of course need a new member in our `struct event`. We can't use pointers here, since we are crossing kernel and user space boundaries. So we need to use a `char[256]` array. The size limit is arbitrary and should be able to store the longest filenames.
 
