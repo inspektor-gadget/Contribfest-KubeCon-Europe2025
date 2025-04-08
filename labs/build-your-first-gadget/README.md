@@ -56,7 +56,11 @@ After our gadget is successfully built and tagged as `open` we can run it the fo
 
 To execute the gadget, we don't need to be in the same directory (and if we push our gadget to OCI registries we can also use it on other hosts). We need the `--verify-image=false` parameter here, since our gadget is not signed, but we know its safe and can be trusted. Our skeleton of the gadget only has a single field called `timestamp` and by default these are not shown. In our lab we want them to be seen so we specify that the `timestamp` column should be included by giving it a `+` prefix.
 
-Given that the gadget is running in a system with other components accessing files, we can already see some events:
+In case no component is accessing files we can also generate some events. To do that, leave the `sudo ig run` command running and open a second terminal or ssh session. For testing purposes, we run an interactive docker container:
+```bash
+~ $ docker run -it --rm busybox
+/ # 
+```
 
 ```bash
 ~ $ sudo ig run open --verify-image=false --fields +timestamp
